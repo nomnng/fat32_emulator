@@ -18,55 +18,48 @@ static u32 *s_fat = NULL; // pointer to fat itself
 static void *s_cached_cluster_buffer = NULL;
 static u32 s_cached_cluster_number = 0xFFFFFFFF;
 
+static u32 s_normalize_cluster_number(u32 raw_cluster_number) {
+	return (raw_cluster_number & CLUSTER_NUMBER_MASK) - 2;
+}
+
 static void s_read_sectors(u32 offset, u32 count, void *dst_buffer) {
 	fseek(s_fat_file, offset * s_boot_sector.sector_size, SEEK_SET);
 	fread(dst_buffer, s_boot_sector.sector_size, count, s_fat_file);
 }
 
-static void s_read_clusters_into_buffer(u32 offset, u32 count, void *dst_buffer) {
-	fseek(s_fat_file, s_first_data_sector * s_boot_sector.sector_size + offset * s_cluster_size, SEEK_SET);
+static void s_read_clusters_into_buffer(u32 raw_cluster_number, u32 count, void *dst_buffer) {
+	u32 cluster_number = s_normalize_cluster_number(raw_cluster_number);
+	fseek(s_fat_file, s_first_data_sector * s_boot_sector.sector_size + cluster_number * s_cluster_size, SEEK_SET);
 	fread(dst_buffer, s_cluster_size, count, s_fat_file);
 }
 
-static u32 s_normalize_cluster_number(u32 raw_cluster_number) {
-	return (raw_cluster_number & CLUSTER_NUMBER_MASK) - 2;
+static bool s_is_end_of_chain_cluster(u32 raw_cluster_number) {
+	return (raw_cluster_number & CLUSTER_NUMBER_MASK) >= END_OF_CHAIN_CLUSTER;
 }
 
-static void* s_get_cluster(u32 cluster_number) {
-	cluster_number = s_normalize_cluster_number(cluster_number);
-	if (s_cached_cluster_number != cluster_number) {
-		fseek(s_fat_file, s_first_data_sector * s_boot_sector.sector_size + cluster_number * s_cluster_size, SEEK_SET);
-		fread(s_cached_cluster_buffer, s_cluster_size, 1, s_fat_file);
-		s_cached_cluster_number = cluster_number;
-	}
-
-	return s_cached_cluster_buffer;
+static u32 s_get_next_cluster_number(u32 raw_cluster_number) {
+	return s_fat[raw_cluster_number & CLUSTER_NUMBER_MASK];
 }
 
-
-static bool s_is_end_of_chain_cluster(u32 cluster_number) {
-	return (cluster_number & CLUSTER_NUMBER_MASK) >= END_OF_CHAIN_CLUSTER;
-}
-
-static u32 s_get_next_cluster_number(u32 cluster_number) {
-	return s_fat[cluster_number];
-}
-
-static bool s_next_directory_file(u32 *out_current_cluster_number, u32 *out_current_entry_index, file_info *fi) {
-	void *current_cluster = s_get_cluster(*out_current_cluster_number);
-
-	if (next_cluster_file(current_cluster, s_cluster_size, out_current_entry_index, fi)) {
-		return TRUE;
-	} else {
-		u32 next_cluster = s_get_next_cluster_number(*out_current_cluster_number);
+static void* s_prefetch_directory_clusters(u32 starting_cluster, u32 *out_cluster_count) {
+	u32 next_cluster = starting_cluster;
+	u32 cluster_count = 1;
+	while (next_cluster = s_get_next_cluster_number(next_cluster)) {
 		if (s_is_end_of_chain_cluster(next_cluster)) {
-			return FALSE;
+			break;
 		}
-
-		*out_current_entry_index = 0;
-		*out_current_cluster_number = next_cluster;
-		return s_next_directory_file(out_current_cluster_number, out_current_entry_index, fi);
+		cluster_count++;
 	}
+
+	void *directory_clusters_buffer = malloc(cluster_count * s_cluster_size);
+	u32 current_cluster = starting_cluster;
+	for (int i = 0; i < cluster_count; i++, current_cluster = s_get_next_cluster_number(current_cluster)) {
+		u8 *buffer_ptr = ((u8*) directory_clusters_buffer) + s_cluster_size * i;
+		s_read_clusters_into_buffer(current_cluster, 1, buffer_ptr);
+	}
+
+	*out_cluster_count = cluster_count;
+	return directory_clusters_buffer;
 }
 
 bool load_fat_from_file(char *filepath) {
@@ -91,16 +84,21 @@ void print_directory_files(char *path) {
 	u32 current_entry_index = 0;
 	u32 current_cluster = 2;
 	file_info fi;
+	u32 cluster_count;
 
 	char current_dir_name[MAX_FILENAME_LEN + 1];
 	u8 current_dir_name_len = 0;
 	for (int i = 0; path[i]; i++) {
-		if (path[i] == '/') {
+		if ((path[i] == '/') || (path[i + 1] == 0)) {
+			if (path[i] != '/') {
+				current_dir_name[current_dir_name_len++] = path[i];
+			}
 			current_dir_name[current_dir_name_len] = 0;
 			current_dir_name_len = 0;
 
 			bool found_directory = FALSE;
-			while (s_next_directory_file(&current_cluster, &current_entry_index, &fi)) {
+			void *directory_clusters = s_prefetch_directory_clusters(current_cluster, &cluster_count);
+			while (next_cluster_file(directory_clusters, s_cluster_size * cluster_count, &current_entry_index, &fi)) {
 				if (strcmp(current_dir_name, fi.filename) == 0) {
 					found_directory = TRUE;
 					break;
@@ -108,7 +106,7 @@ void print_directory_files(char *path) {
 			}
 
 			if (!found_directory) {
-				printf("Can't find \"%s\" folder", current_dir_name);
+				printf("Can't find \"%s\" folder\n", current_dir_name);
 				return;
 			}
 
@@ -119,7 +117,8 @@ void print_directory_files(char *path) {
 		}
 	}
 
-	while (s_next_directory_file(&current_cluster, &current_entry_index, &fi)) {
+	void *directory_clusters = s_prefetch_directory_clusters(current_cluster, &cluster_count);
+	while (next_cluster_file(directory_clusters, s_cluster_size * cluster_count, &current_entry_index, &fi)) {
 		printf("%s| %s | Size: %d, Cluster: %d\n", fi.is_directory ? "DIR" : "FILE", fi.filename, fi.file_size, fi.first_cluster);
 	}
 }

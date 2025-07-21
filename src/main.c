@@ -15,7 +15,10 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	print_directory_files("Main folder/Subfolder/");
+	print_directory_files("");
+	print_directory_files("Main folder");
+	print_directory_files("Main folder/");
+	print_directory_files("Main folder/Subfolder");
 
 	return 0;
 }
