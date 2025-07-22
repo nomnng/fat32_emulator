@@ -86,34 +86,40 @@ void print_directory_files(char *path) {
 	file_info fi;
 	u32 cluster_count;
 
-	char current_dir_name[MAX_FILENAME_LEN + 1];
-	u8 current_dir_name_len = 0;
-	for (int i = 0; path[i]; i++) {
-		if ((path[i] == '/') || (path[i + 1] == 0)) {
-			if (path[i] != '/') {
-				current_dir_name[current_dir_name_len++] = path[i];
-			}
-			current_dir_name[current_dir_name_len] = 0;
-			current_dir_name_len = 0;
+	if (path[0] != '/') {
+		printf("Incorrect path format\n");
+	}
 
-			bool found_directory = FALSE;
-			void *directory_clusters = s_prefetch_directory_clusters(current_cluster, &cluster_count);
-			while (next_cluster_file(directory_clusters, s_cluster_size * cluster_count, &current_entry_index, &fi)) {
-				if (strcmp(current_dir_name, fi.filename) == 0) {
-					found_directory = TRUE;
-					break;
-				}
-			}
+	char searched_directory[MAX_FILENAME_LEN + 1];
+	char *path_ptr = path + 1;
 
-			if (!found_directory) {
-				printf("Can't find \"%s\" folder\n", current_dir_name);
-				return;
-			}
+	while (path_ptr[0]) {
+		char *slash_ptr = strchr(path_ptr, '/');
+		if (slash_ptr) {
+			int searched_directory_len = slash_ptr - path_ptr;
+			memcpy(searched_directory, path_ptr, searched_directory_len);
+			searched_directory[searched_directory_len] = 0;
 
-			current_cluster = fi.first_cluster;
-			current_entry_index = 0;
+			path_ptr = slash_ptr + 1;
 		} else {
-			current_dir_name[current_dir_name_len++] = path[i];
+			int remaining_len = strlen(path_ptr);			
+			memcpy(searched_directory, path_ptr, remaining_len);
+			searched_directory[remaining_len] = 0;
+
+			path_ptr += remaining_len;
+		}
+
+		void *directory_clusters = s_prefetch_directory_clusters(current_cluster, &cluster_count);
+		if (!find_file_in_directory(directory_clusters, s_cluster_size * cluster_count, &fi, searched_directory)) {
+			printf("Can't find \"%s\" folder\n", searched_directory);
+			return;
+		}
+
+		current_cluster = fi.first_cluster;
+		if (current_cluster == 0) {
+			// ".." directory entry of the directories inside root directory point to cluster 0
+			// but root directory starts at cluster 2
+			current_cluster = 2;
 		}
 	}
 
@@ -121,4 +127,5 @@ void print_directory_files(char *path) {
 	while (next_cluster_file(directory_clusters, s_cluster_size * cluster_count, &current_entry_index, &fi)) {
 		printf("%s| %s | Size: %d, Cluster: %d\n", fi.is_directory ? "DIR" : "FILE", fi.filename, fi.file_size, fi.first_cluster);
 	}
+	printf("\n");
 }

@@ -123,3 +123,14 @@ bool next_cluster_file(void *ptr, u32 size, u32 *out_current_entry_index, file_i
 
 	return FALSE;
 }
+
+bool find_file_in_directory(void *ptr, u32 size, file_info *out_file_info, char* name) {
+	u32 current_entry_index = 0;
+	while (next_cluster_file(ptr, size, &current_entry_index, out_file_info)) {
+		if (strcmp(name, out_file_info->filename) == 0) {
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}

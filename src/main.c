@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "fat_manager.h"
+#include "shell.h"
 
 int main(int argc, char *argv[]) {
 	if (argc < 2) {
@@ -15,10 +16,7 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	print_directory_files("");
-	print_directory_files("Main folder");
-	print_directory_files("Main folder/");
-	print_directory_files("Main folder/Subfolder");
+	run_shell();
 
 	return 0;
 }
