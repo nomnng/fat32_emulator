@@ -1,4 +1,4 @@
-#include "directory_browser.h"
+#include "directory.h"
 #include "fat32_dir_entry.h"
 
 #include <stdlib.h>
@@ -66,7 +66,7 @@ static u8 s_sfn_checksum(char *name) {
 	return sum;
 }
 
-int count_directory_files(void *ptr, int size) {
+int directory_count_files(void *ptr, int size) {
 	int entry_count = 0;
 	void *end_ptr = (char*) ptr + size;
 	for (dir_entry *current_entry = ptr; current_entry < end_ptr; current_entry++) {
@@ -85,7 +85,7 @@ int count_directory_files(void *ptr, int size) {
 	return entry_count;
 }
 
-bool next_cluster_file(void *ptr, u32 size, u32 *out_current_entry_index, file_info *out_file_info) {
+bool directory_next_file(void *ptr, u32 size, u32 *out_current_entry_index, file_info *out_file_info) {
 	dir_entry *current_entry = (dir_entry*) ptr + *out_current_entry_index;
 	dir_entry *end_ptr = (dir_entry*) ((char*) ptr + size);
 
@@ -124,9 +124,9 @@ bool next_cluster_file(void *ptr, u32 size, u32 *out_current_entry_index, file_i
 	return FALSE;
 }
 
-bool find_file_in_directory(void *ptr, u32 size, file_info *out_file_info, char* name) {
+bool directory_find_file(void *ptr, u32 size, file_info *out_file_info, char* name) {
 	u32 current_entry_index = 0;
-	while (next_cluster_file(ptr, size, &current_entry_index, out_file_info)) {
+	while (directory_next_file(ptr, size, &current_entry_index, out_file_info)) {
 		if (strcmp(name, out_file_info->filename) == 0) {
 			return TRUE;
 		}

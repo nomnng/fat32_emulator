@@ -1,11 +1,12 @@
-#include "fat_manager.h"
-#include "directory_browser.h"
+#include "fat.h"
+#include "directory.h"
 #include "fat32_reserved_area.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#define ROOT_DIR_CLUSTER 2
 #define END_OF_CHAIN_CLUSTER 0x0FFFFFF8
 #define CLUSTER_NUMBER_MASK 0x0FFFFFFF
 
@@ -14,9 +15,7 @@ static u32 s_first_data_sector = 0; // number of first data sector
 static FILE *s_fat_file = NULL;
 static fat_boot_sector s_boot_sector;
 static u32 *s_fat = NULL; // pointer to fat itself
-
-static void *s_cached_cluster_buffer = NULL;
-static u32 s_cached_cluster_number = 0xFFFFFFFF;
+static u32 s_current_directory_cluster = ROOT_DIR_CLUSTER;
 
 static u32 s_normalize_cluster_number(u32 raw_cluster_number) {
 	return (raw_cluster_number & CLUSTER_NUMBER_MASK) - 2;
@@ -62,36 +61,13 @@ static void* s_prefetch_directory_clusters(u32 starting_cluster, u32 *out_cluste
 	return directory_clusters_buffer;
 }
 
-bool load_fat_from_file(char *filepath) {
-	s_fat_file = fopen(filepath, "rb+");
-	if (!s_fat_file) {
-		return FALSE;
-	}
-
-	fread(&s_boot_sector, sizeof(s_boot_sector), 1, s_fat_file);
-	s_cluster_size = s_boot_sector.sector_size * s_boot_sector.sectors_per_cluster;
-	s_first_data_sector = s_boot_sector.reserved_sectors + s_boot_sector.fats * s_boot_sector.fat32_length;
-
-	s_cached_cluster_buffer = malloc(s_cluster_size);
-
-	s_fat = (u32*) malloc(s_boot_sector.sector_size * s_boot_sector.fat32_length);
-	s_read_sectors(s_boot_sector.reserved_sectors, s_boot_sector.fat32_length, s_fat);
-
-	return TRUE;
-}
-
-void print_directory_files(char *path) {
-	u32 current_entry_index = 0;
-	u32 current_cluster = 2;
+static u32 s_get_cluster_from_path(char *path, u32 starting_cluster) {
+	u32 current_cluster = starting_cluster;
 	file_info fi;
 	u32 cluster_count;
 
-	if (path[0] != '/') {
-		printf("Incorrect path format\n");
-	}
-
 	char searched_directory[MAX_FILENAME_LEN + 1];
-	char *path_ptr = path + 1;
+	char *path_ptr = path;
 
 	while (path_ptr[0]) {
 		char *slash_ptr = strchr(path_ptr, '/');
@@ -110,21 +86,78 @@ void print_directory_files(char *path) {
 		}
 
 		void *directory_clusters = s_prefetch_directory_clusters(current_cluster, &cluster_count);
-		if (!find_file_in_directory(directory_clusters, s_cluster_size * cluster_count, &fi, searched_directory)) {
-			printf("Can't find \"%s\" folder\n", searched_directory);
-			return;
+		if (!directory_find_file(directory_clusters, s_cluster_size * cluster_count, &fi, searched_directory)) {
+			return 0;
 		}
 
 		current_cluster = fi.first_cluster;
 		if (current_cluster == 0) {
 			// ".." directory entry of the directories inside root directory point to cluster 0
 			// but root directory starts at cluster 2
-			current_cluster = 2;
+			current_cluster = ROOT_DIR_CLUSTER;
 		}
 	}
 
-	void *directory_clusters = s_prefetch_directory_clusters(current_cluster, &cluster_count);
-	while (next_cluster_file(directory_clusters, s_cluster_size * cluster_count, &current_entry_index, &fi)) {
+	return current_cluster;
+}
+
+bool fat_load_from_file(char *filepath) {
+	s_fat_file = fopen(filepath, "rb+");
+	if (!s_fat_file) {
+		return FALSE;
+	}
+
+	fread(&s_boot_sector, sizeof(s_boot_sector), 1, s_fat_file);
+	s_cluster_size = s_boot_sector.sector_size * s_boot_sector.sectors_per_cluster;
+	s_first_data_sector = s_boot_sector.reserved_sectors + s_boot_sector.fats * s_boot_sector.fat32_length;
+
+	s_fat = (u32*) malloc(s_boot_sector.sector_size * s_boot_sector.fat32_length);
+	s_read_sectors(s_boot_sector.reserved_sectors, s_boot_sector.fat32_length, s_fat);
+
+	return TRUE;
+}
+
+bool fat_change_current_directory(char *path) {
+	u32 directory_cluster = 0;
+	if (path[0] == '/') {
+		directory_cluster = s_get_cluster_from_path(path + 1, ROOT_DIR_CLUSTER);
+	} else {
+		directory_cluster = s_get_cluster_from_path(path, s_current_directory_cluster);
+	}
+
+	if (!directory_cluster) {
+		return FALSE;
+	}
+
+	s_current_directory_cluster = directory_cluster;
+
+	return TRUE;
+}
+
+void fat_print_current_directory_files() {
+	u32 current_entry_index = 0;
+	file_info fi;
+	u32 cluster_count;
+
+	void *directory_clusters = s_prefetch_directory_clusters(s_current_directory_cluster, &cluster_count);
+	while (directory_next_file(directory_clusters, s_cluster_size * cluster_count, &current_entry_index, &fi)) {
+		printf("%s| %s | Size: %d, Cluster: %d\n", fi.is_directory ? "DIR" : "FILE", fi.filename, fi.file_size, fi.first_cluster);
+	}
+	printf("\n");
+}
+
+void fat_print_directory_files(char *absolute_path) {
+	if (absolute_path[0] != '/') {
+		printf("Incorrect path format\n");
+	}
+
+	u32 directory_cluster = s_get_cluster_from_path(absolute_path + 1, ROOT_DIR_CLUSTER);
+	u32 current_entry_index = 0;
+	file_info fi;
+	u32 cluster_count;
+
+	void *directory_clusters = s_prefetch_directory_clusters(directory_cluster, &cluster_count);
+	while (directory_next_file(directory_clusters, s_cluster_size * cluster_count, &current_entry_index, &fi)) {
 		printf("%s| %s | Size: %d, Cluster: %d\n", fi.is_directory ? "DIR" : "FILE", fi.filename, fi.file_size, fi.first_cluster);
 	}
 	printf("\n");

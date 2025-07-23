@@ -1,11 +1,10 @@
 #include "shell.h"
-#include "types.h"
-#include "fat_manager.h"
+#include "fat.h"
 
 #include <stdio.h>
 #include <string.h>
 
-static char s_cwd[260] = "/"; // current working directory
+static char s_cwd[1024] = "/"; // current working directory
 
 static bool s_check_command(char* command, char* str) {
 	int i;
@@ -33,13 +32,22 @@ static bool s_check_command(char* command, char* str) {
 
 	char *arguments_str = str + i + 1;
 	int arguments_len = strlen(arguments_str);
-	memcpy(str, arguments_str, arguments_len + 1); // copy string including NULL terminating character
+	memcpy(str, arguments_str, arguments_len + 1); // remove command and overwrite it with arguments
 
 	return TRUE;
 }
 
 static void s_change_cwd(char *path) {
-	strcpy(s_cwd, path);
+	if (path[0] == '/') {
+		strcpy(s_cwd, path);
+	} else {
+		int cwd_len = strlen(s_cwd);
+		if (s_cwd[cwd_len - 1] != '/') {
+			strcat(s_cwd, "/");
+		}
+
+		strcat(s_cwd, path);
+	}
 }
 
 void run_shell() {
@@ -51,15 +59,10 @@ void run_shell() {
 		if (s_check_command("exit", buffer)) {
 			return;
 		} else if (s_check_command("ls", buffer)) {
-			print_directory_files(s_cwd);
+			fat_print_current_directory_files();
 		} else if (s_check_command("cd", buffer)) {
 			s_change_cwd(buffer);
-		} else if (s_check_command("", buffer)) {
-			
-		} else if (s_check_command("", buffer)) {
-			
-		} else if (s_check_command("", buffer)) {
-			
+			fat_change_current_directory(buffer);
 		}
 	}
 }

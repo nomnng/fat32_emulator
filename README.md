@@ -9,3 +9,8 @@ cmake -S . -B build
 cmake --build build
 ./build/fat32_emulator fat_filesystem.bin
 ```
+
+# Commands
+
+cd <path> - change directory, path can be relative or absolute 
+ls - show files in current directory

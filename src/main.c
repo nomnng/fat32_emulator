@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "fat_manager.h"
+#include "fat.h"
 #include "shell.h"
 
 int main(int argc, char *argv[]) {
@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
 
 	char *fat_filename = argv[1];
 
-	if (!load_fat_from_file(fat_filename)) {
+	if (!fat_load_from_file(fat_filename)) {
 		return 1;
 	}
 
