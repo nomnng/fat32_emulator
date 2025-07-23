@@ -12,5 +12,8 @@ cmake --build build
 
 # Commands
 
-cd <path> - change directory, path can be relative or absolute 
+cd <path> - change directory, path can be relative or absolute
+
 ls - show files in current directory
+
+read <filename> - print file content, filename should be in the current directory

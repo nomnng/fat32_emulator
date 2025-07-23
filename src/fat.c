@@ -86,7 +86,8 @@ static u32 s_get_cluster_from_path(char *path, u32 starting_cluster) {
 		}
 
 		void *directory_clusters = s_prefetch_directory_clusters(current_cluster, &cluster_count);
-		if (!directory_find_file(directory_clusters, s_cluster_size * cluster_count, &fi, searched_directory)) {
+		bool directory_exists = directory_find_file(directory_clusters, s_cluster_size * cluster_count, &fi, searched_directory);
+		if (!directory_exists || !fi.is_directory) {
 			return 0;
 		}
 
@@ -119,7 +120,8 @@ bool fat_load_from_file(char *filepath) {
 
 bool fat_change_current_directory(char *path) {
 	u32 directory_cluster = 0;
-	if (path[0] == '/') {
+	bool is_path_absolute = path[0] == '/';
+	if (is_path_absolute) {
 		directory_cluster = s_get_cluster_from_path(path + 1, ROOT_DIR_CLUSTER);
 	} else {
 		directory_cluster = s_get_cluster_from_path(path, s_current_directory_cluster);
@@ -160,5 +162,41 @@ void fat_print_directory_files(char *absolute_path) {
 	while (directory_next_file(directory_clusters, s_cluster_size * cluster_count, &current_entry_index, &fi)) {
 		printf("%s| %s | Size: %d, Cluster: %d\n", fi.is_directory ? "DIR" : "FILE", fi.filename, fi.file_size, fi.first_cluster);
 	}
+	printf("\n");
+}
+
+void fat_print_file_content(char *filename) {
+	u32 cluster_count;
+	file_info fi;
+
+	void *directory_clusters = s_prefetch_directory_clusters(s_current_directory_cluster, &cluster_count);
+	bool file_exists = directory_find_file(directory_clusters, s_cluster_size * cluster_count, &fi, filename);
+	if (!file_exists || fi.is_directory) {
+		printf("Can't find specified file\n");
+		return;
+	}
+
+	u32 current_cluster = fi.first_cluster;
+	u32 remaining_size = fi.file_size;
+	do {
+		u8 file_content_buffer[s_cluster_size + 1];
+		s_read_clusters_into_buffer(current_cluster, 1, file_content_buffer);
+		if (remaining_size >= s_cluster_size) {
+			file_content_buffer[s_cluster_size] = 0;
+			remaining_size -= s_cluster_size;
+			printf(file_content_buffer);
+		} else {
+			file_content_buffer[remaining_size] = 0;
+			printf(file_content_buffer);
+			remaining_size = 0;
+		}
+
+		if (s_is_end_of_chain_cluster(current_cluster)) {
+			break;
+		}
+
+		current_cluster = s_get_next_cluster_number(current_cluster);
+	} while (remaining_size);
+
 	printf("\n");
 }

@@ -61,8 +61,13 @@ void run_shell() {
 		} else if (s_check_command("ls", buffer)) {
 			fat_print_current_directory_files();
 		} else if (s_check_command("cd", buffer)) {
-			s_change_cwd(buffer);
-			fat_change_current_directory(buffer);
+			if (fat_change_current_directory(buffer)) {
+				s_change_cwd(buffer);
+			} else {
+				printf("Can't find specified directory\n");
+			}
+		} else if (s_check_command("read", buffer)) {
+			fat_print_file_content(buffer);
 		}
 	}
 }
