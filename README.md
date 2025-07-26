@@ -11,9 +11,12 @@ cmake --build build
 ```
 
 # Commands
-
+```
 cd <path> - change directory, path can be relative or absolute
 
 ls - show files in current directory
 
 read <filename> - print file content, filename should be in the current directory
+
+mkdir <directory name> - create a directory with specified name inside current directory
+```

@@ -68,6 +68,8 @@ void run_shell() {
 			}
 		} else if (s_check_command("read", buffer)) {
 			fat_print_file_content(buffer);
+		} else if (s_check_command("mkdir", buffer)) {
+			fat_create_directory(buffer);
 		}
 	}
 }

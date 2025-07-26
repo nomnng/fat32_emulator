@@ -8,5 +8,6 @@ void fat_print_directory_files(char *path);
 bool fat_change_current_directory(char *path);
 void fat_print_current_directory_files();
 void fat_print_file_content(char *filename);
+void fat_create_directory(char* directory_name);
 
 #endif
